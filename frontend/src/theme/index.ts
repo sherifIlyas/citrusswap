@@ -5,7 +5,8 @@ const theme = extendTheme({
     global: {
       body: {
         bg: '#171b26',
-        color: 'white'
+        color: 'white',
+        overflowX: 'hidden' // Add this to prevent horizontal scrolling
       }
     }
   }

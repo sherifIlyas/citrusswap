@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.2.0",
+    "@openzeppelin/contracts-upgradeable": "4.9.6",
+    "dotenv": "^16.4.7",
+    "hardhat": "^2.22.19",
+    "lightweight-charts": "^5.0.5",
+    "solmate": "^6.8.0"
+  }
+}

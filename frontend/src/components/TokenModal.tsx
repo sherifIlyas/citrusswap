@@ -1,6 +1,14 @@
-import { Box, useDisclosure, Button, VStack, Text, Image } from '@chakra-ui/react';
+import { Box, useDisclosure, Button, VStack, Text, Image, Input, InputGroup, InputLeftElement } from '@chakra-ui/react';
 import { useState, useEffect } from 'react';
+import { SearchIcon } from '@chakra-ui/icons';
 import tokenList from '../../../shadow-assets/blockchains/sonic/tokenlist.json';
+import { usePublicClient } from 'wagmi';
+import { isAddress } from 'viem';
+
+type CachedImage = {
+  url: string;
+  timestamp: number;
+};
 
 interface TokenModalProps {
   isOpen: boolean;
@@ -11,12 +19,88 @@ interface TokenModalProps {
 export default function TokenModal({ isOpen, onClose, onSelect }: TokenModalProps) {
   const [displayedTokens, setDisplayedTokens] = useState(20);
   const [tokens, setTokens] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredTokens, setFilteredTokens] = useState<any[]>([]);
+  const publicClient = usePublicClient();
 
   useEffect(() => {
     if(isOpen) {
-      setTokens(tokenList.tokens.flat());
+      const allTokens = tokenList.tokens.flat();
+      setTokens(allTokens);
+      setFilteredTokens(allTokens);
+      setSearchQuery('');
     }
   }, [isOpen]);
+  
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredTokens(tokens);
+    } else {
+      // Check if search query is a valid address
+      if (isAddress(searchQuery)) {
+        // Fetch token details from blockchain
+        Promise.all([
+          publicClient.readContract({
+            address: searchQuery,
+            abi: [{
+              inputs: [],
+              name: 'symbol',
+              outputs: [{ name: '', type: 'string' }],
+              stateMutability: 'view',
+              type: 'function'
+            }],
+            functionName: 'symbol'
+          }),
+          publicClient.readContract({
+            address: searchQuery,
+            abi: [{
+              inputs: [],
+              name: 'decimals',
+              outputs: [{ name: '', type: 'uint8' }],
+              stateMutability: 'view',
+              type: 'function'
+            }],
+            functionName: 'decimals'
+          }),
+          publicClient.readContract({
+            address: searchQuery,
+            abi: [{
+              inputs: [],
+              name: 'name',
+              outputs: [{ name: '', type: 'string' }],
+              stateMutability: 'view',
+              type: 'function'
+            }],
+            functionName: 'name'
+          })
+        ]).then(([symbol, decimals, name]) => {
+          const newToken = {
+            address: searchQuery,
+            symbol,
+            decimals,
+            name
+          };
+          setFilteredTokens([newToken]);
+        }).catch(() => {
+          // If contract calls fail, fall back to regular search
+          const query = searchQuery.toLowerCase();
+          const filtered = tokens.filter(token => 
+            token.symbol.toLowerCase().includes(query) || 
+            token.name?.toLowerCase().includes(query)
+          );
+          setFilteredTokens(filtered);
+        });
+      } else {
+        // Regular search for symbol/name
+        const query = searchQuery.toLowerCase();
+        const filtered = tokens.filter(token => 
+          token.symbol.toLowerCase().includes(query) || 
+          token.name?.toLowerCase().includes(query)
+        );
+        setFilteredTokens(filtered);
+      }
+    }
+  }, [searchQuery, tokens]);
 
   const loadMore = () => {
     setDisplayedTokens(prev => prev + 20);
@@ -51,28 +135,65 @@ export default function TokenModal({ isOpen, onClose, onSelect }: TokenModalProp
           overflowY="auto"
         >
           <VStack spacing={3} align="stretch">
-            {tokens.slice(0, displayedTokens).map((token, index) => (
+            <Box mb={2}>
+              <InputGroup>
+                <InputLeftElement pointerEvents="none">
+                  <SearchIcon color="gray.300" />
+                </InputLeftElement>
+                <Input 
+                  placeholder="Search tokens" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  bg="whiteAlpha.100"
+                  color="white"
+                  _placeholder={{ color: 'gray.300' }}
+                  borderRadius="md"
+                />
+              </InputGroup>
+            </Box>
+            {filteredTokens.slice(0, displayedTokens).map((token, index) => (
               <Button
                 key={index}
                 variant="ghost"
                 height="60px"
-                onClick={() => onSelect(token)}
+                onClick={() => {
+                  onSelect(token);
+                  onClose();
+                }}
                 display="flex"
                 alignItems="center"
                 justifyContent="flex-start"
+                _hover={{ bg: 'whiteAlpha.100' }}
               >
                 <Image
                   src={`/shadow-assets/blockchains/sonic/assets/${token.address}/logo.png`}
                   boxSize="32px"
                   borderRadius="full"
                   mr={3}
+                  onError={(e) => {
+                    // Try to load from cache if image fails
+                    const cached = localStorage.getItem(`token-image-${token.address}`);
+                    if (cached) {
+                      const cachedImage: CachedImage = JSON.parse(cached);
+                      (e.target as HTMLImageElement).src = cachedImage.url;
+                    }
+                  }}
+                  onLoad={(e) => {
+                    // Cache successful image loads
+                    const url = (e.target as HTMLImageElement).src;
+                    const cachedImage: CachedImage = {
+                      url,
+                      timestamp: Date.now()
+                    };
+                    localStorage.setItem(`token-image-${token.address}`, JSON.stringify(cachedImage));
+                  }}
                   fallbackSrc='/placeholder-coin.png' bg='gray.800'
                 />
                 <Text fontWeight="bold" color="whiteAlpha.900">{token.symbol}</Text>
               </Button>
             ))}
             
-            {displayedTokens < tokens.length && (
+            {displayedTokens < filteredTokens.length && (
               <Button
                 mt={4}
                 onClick={loadMore}
